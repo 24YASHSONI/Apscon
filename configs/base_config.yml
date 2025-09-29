@@ -1,0 +1,21 @@
+WORK_PATH: "./checkpoint"
+CUDA_VISIBLE_DEVICES: "0"
+
+learning_rate: 0.0005
+GAN: False
+d_iter: 5
+weight_cliping_limit: 0.01
+
+restore: False
+restore_epoch: 260
+
+batch_size: 16
+epochs: 2
+
+data:
+    # train: ["GT1","4-GT4","GT5-9","GT6-3"]
+    train: ["Seq_01", "Seq_02", "Seq_03","Seq_04","Seq_05", "Seq_06", "Seq_08"]
+    # test: ["GT6-2"]
+    test: ["Seq_07","Seq_09"]
+    # transform: ['env_h_0.6','env_h_1','env_h_1.3','env2_h_0.6','env2_h_0.6_pillar_r','env2_h_0.6_radarl',
+                # 'env2_h_0.6_radarr','env2_human_moving_zigzag','human_moving','human_moving_h_1.3']
