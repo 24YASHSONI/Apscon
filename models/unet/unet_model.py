@@ -4,6 +4,50 @@ import torch.nn.functional as F
 
 from .unet_parts import *
 
+# Add this ASPP module class to your unet_model.py file
+
+class ASPP(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(ASPP, self).__init__()
+        
+        # Atrous convolutions with rates 1, 3, 6 as requested
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1, dilation=1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True)
+        )
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=3, dilation=3),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True)
+        )
+        self.conv3 = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=6, dilation=6),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True)
+        )
+
+        # Final 1x1 convolution to fuse the features
+        self.conv_out = nn.Sequential(
+            nn.Conv2d(out_channels * 3, in_channels, kernel_size=1),
+            nn.BatchNorm2d(in_channels),
+            nn.ReLU(inplace=True)
+        )
+
+    def forward(self, x):
+        # Apply parallel convolutions
+        out1 = self.conv1(x)
+        out2 = self.conv2(x)
+        out3 = self.conv3(x)
+
+        # Concatenate along the channel dimension
+        concat = torch.cat([out1, out2, out3], dim=1)
+        
+        # Fuse with the 1x1 convolution
+        out = self.conv_out(concat)
+        
+        return out
+
 class UNet(nn.Module):
     def __init__(self, n_channels, n_classes, bilinear=True):
         super(UNet, self).__init__()
@@ -18,6 +62,13 @@ class UNet(nn.Module):
         self.down3 = Down(256, 512)
         factor = 2 if bilinear else 1
         self.down4 = Down(512, 1024 // factor)
+
+        # --- ASPP Bottleneck ---
+        # The ASPP block is placed here.
+        # in_channels = 1536 // factor (or 768 with bilinear=True)
+        # We set out_channels for each parallel conv to be 1/4 of the input channels.
+        self.aspp = ASPP(in_channels=1024 // factor, out_channels=(1024 // factor) // 4)
+        
         self.up1 = Up(1024, 512 // factor, bilinear)
         self.up2 = Up(512, 256 // factor, bilinear)
         self.up3 = Up(256, 128 // factor, bilinear)
@@ -50,7 +101,11 @@ class UNet(nn.Module):
         x4 = self.down3(x3)
         # x4 = self.temporal_shift(x4)
         x5 = self.down4(x4)
-        x = self.up1(x5, x4)
+
+        # --- Apply ASPP ---
+        x5_aspp = self.aspp(x5) # Process bottleneck with ASPP
+        
+        x = self.up1(x5_aspp, x4)
         x = self.up2(x, x3)
         x = self.up3(x, x2)
         x = self.up4(x, x1)
